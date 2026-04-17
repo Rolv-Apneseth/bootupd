@@ -82,6 +82,7 @@ impl Bios {
             let device = target_device(device)?;
             cmd.args(&["--target", "powerpc-ieee1275"])
                 .args(&["--boot-directory", boot_dir.to_str().unwrap()])
+                .args(["--modules", "mdraid1x part_gpt"])
                 .arg("--no-nvram")
                 .arg(&device);
         }
