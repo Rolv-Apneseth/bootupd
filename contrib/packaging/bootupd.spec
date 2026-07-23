@@ -18,6 +18,7 @@ ExcludeArch:    %{ix86}
 # For now, see upstream
 BuildRequires: make
 BuildRequires:  openssl-devel
+BuildRequires:  selinux-policy-devel
 %if 0%{?rhel}
 BuildRequires: rust-toolset
 %else
@@ -58,6 +59,7 @@ Conflicts:      bootc < 1.14.1
 %{_unitdir}/bootupd-dbus.service
 %{_datadir}/dbus-1/system.d/org.coreos.Bootupd1.conf
 %{_datadir}/dbus-1/system-services/org.coreos.Bootupd1.service
+%{_datadir}/selinux/packages/bootupd-dbus.pp
 
 %prep
 %autosetup -n %{crate}-%{version} -p1 -a1
@@ -68,12 +70,22 @@ Conflicts:      bootc < 1.14.1
 %cargo_vendor_manifest
 %cargo_license_summary
 %{cargo_license} > LICENSE.dependencies
+make -f /usr/share/selinux/devel/Makefile -C contrib/selinux bootupd-dbus.pp
 
 %install
 %make_install INSTALL="install -p -c"
 %{__make} install-grub-static DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
 %{__make} install-systemd-unit DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
 %{__make} install-dbus DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
+install -m 644 -D -t "%{buildroot}%{_datadir}/selinux/packages/" contrib/selinux/bootupd-dbus.pp
+
+%post -n %{crate}
+semodule -i %{_datadir}/selinux/packages/bootupd-dbus.pp 2>/dev/null || :
+
+%postun -n %{crate}
+if [ $1 -eq 0 ]; then
+    semodule -r bootupd-dbus 2>/dev/null || :
+fi
 
 %changelog
 * Tue Oct 18 2022 Colin Walters <walters@verbum.org> - 0.2.8-3

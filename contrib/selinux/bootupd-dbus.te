@@ -1,0 +1,41 @@
+module bootupd-dbus 1.0;
+
+require {
+    type bootupd_t;
+    type system_dbusd_var_run_t;
+    type system_dbusd_t;
+    type unconfined_t;
+    type unconfined_service_t;
+    type init_t;
+    type proc_t;
+    type tmp_t;
+    type dosfs_t;
+    class dir { search read create mounton rmdir };
+    class sock_file write;
+    class unix_stream_socket connectto;
+    class file { read open getattr };
+    class filesystem { mount unmount };
+    class dbus { send_msg acquire_svc };
+}
+
+# Allow bootupd to connect to the system D-Bus socket
+allow bootupd_t system_dbusd_var_run_t:dir search;
+allow bootupd_t system_dbusd_var_run_t:sock_file write;
+allow bootupd_t system_dbusd_t:unix_stream_socket connectto;
+
+# Allow bootupd to own a bus name and send/receive D-Bus messages
+allow bootupd_t system_dbusd_t:dbus { send_msg acquire_svc };
+
+# Allow callers to send D-Bus messages to bootupd.
+# The D-Bus bus policy restricts access to root only.
+allow unconfined_t bootupd_t:dbus send_msg;
+allow unconfined_service_t bootupd_t:dbus send_msg;
+allow init_t bootupd_t:dbus send_msg;
+
+# Allow reading /proc (lsblk device discovery, zbus connection)
+allow bootupd_t proc_t:dir read;
+allow bootupd_t proc_t:file { read open getattr };
+
+# Allow creating and removing temp directories, and mounting/unmounting ESPs
+allow bootupd_t tmp_t:dir { create mounton rmdir };
+allow bootupd_t dosfs_t:filesystem { mount unmount };
