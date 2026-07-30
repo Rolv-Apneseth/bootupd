@@ -38,5 +38,11 @@ install-grub-static:
 install-systemd-unit:
 	install -m 644 -D -t "${DESTDIR}$(PREFIX)/lib/systemd/system/" systemd/bootloader-update.service
 
+.PHONY: install-dbus
+install-dbus:
+	install -m 644 -D -t "${DESTDIR}$(PREFIX)/share/dbus-1/system.d/" dbus-1/system.d/org.coreos.Bootupd1.conf
+	install -m 644 -D -t "${DESTDIR}$(PREFIX)/share/dbus-1/system-services/" dbus-1/system-services/org.coreos.Bootupd1.service
+	install -m 644 -D -t "${DESTDIR}$(PREFIX)/lib/systemd/system/" systemd/bootupd-dbus.service
+
 .PHONY: install-all
-install-all: install install-grub-static install-systemd-unit
+install-all: install install-grub-static install-systemd-unit install-dbus

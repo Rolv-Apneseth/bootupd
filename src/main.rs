@@ -24,6 +24,8 @@ mod bootupd;
 mod cli;
 mod component;
 mod coreos;
+#[cfg(efi_arch)]
+mod dbus;
 #[cfg(any(
     target_arch = "x86_64",
     target_arch = "aarch64",

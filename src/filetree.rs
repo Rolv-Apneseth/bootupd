@@ -118,10 +118,12 @@ impl Display for FileTreeDiff {
     }
 }
 
-#[cfg(test)]
 impl FileTreeDiff {
     pub(crate) fn count(&self) -> usize {
         self.additions.len() + self.removals.len() + self.changes.len()
+    }
+    pub(crate) fn is_empty(&self) -> bool {
+        self.count() == 0
     }
 }
 
@@ -927,5 +929,24 @@ mod tests {
             assert_eq!(b_btime_foo_new, b_btime_foo);
         }
         Ok(())
+    }
+
+    #[test]
+    fn test_diff_count() {
+        let diff = FileTreeDiff {
+            additions: HashSet::new(),
+            removals: HashSet::from([Default::default()]),
+            changes: HashSet::from([Default::default()]),
+        };
+        assert_eq!(diff.count(), 2);
+        assert!(!diff.is_empty());
+
+        let diff = FileTreeDiff {
+            additions: HashSet::new(),
+            removals: HashSet::new(),
+            changes: HashSet::new(),
+        };
+        assert_eq!(diff.count(), 0);
+        assert!(diff.is_empty());
     }
 }

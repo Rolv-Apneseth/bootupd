@@ -1,0 +1,5 @@
+[D-BUS Service]
+Name=org.coreos.Bootupd1
+Exec=/usr/libexec/bootupd dbus
+User=root
+SystemdService=bootupd-dbus.service

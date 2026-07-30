@@ -174,6 +174,22 @@ pub(crate) struct Status {
     pub(crate) adoptable: BTreeMap<String, Adoptable>,
 }
 
+/// Marker written to each ESP after a successful D-Bus mount/sync cycle.
+/// Used to detect sync failures and repair incomplete syncs.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) struct EspSyncState {
+    /// Schema version
+    pub(crate) version: u32,
+    /// Timestamp of last successful sync
+    pub(crate) timestamp: DateTime<Utc>,
+}
+
+impl EspSyncState {
+    pub(crate) const FILENAME: &'static str = ".bootupd-esp-sync.json";
+    pub(crate) const CURRENT_VERSION: u32 = 0;
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -281,6 +297,17 @@ mod test {
             "grub2-efi-x64-1:2.04-23.fc32.x86_64,shim-x64-15-8.x86_64"
         );
         assert_eq!(efi.installed.versions, None);
+        Ok(())
+    }
+
+    #[test]
+    fn test_deserialize_esp_sync_state() -> Result<()> {
+        let data = include_str!("../tests/fixtures/example-bootupd-esp-sync-v0.json");
+        let state: EspSyncState = serde_json::from_str(data)?;
+        let timestamp = serde_json::to_string(&state.timestamp)?;
+
+        assert_eq!(state.version, EspSyncState::CURRENT_VERSION);
+        assert_eq!(&timestamp, "\"2026-07-20T10:30:00Z\"");
         Ok(())
     }
 }

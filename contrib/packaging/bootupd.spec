@@ -55,6 +55,9 @@ Conflicts:      bootc < 1.14.1
 %{_libexecdir}/bootupd
 %{_prefix}/lib/bootupd/grub2-static/
 %{_unitdir}/bootloader-update.service
+%{_unitdir}/bootupd-dbus.service
+%{_datadir}/dbus-1/system.d/org.coreos.Bootupd1.conf
+%{_datadir}/dbus-1/system-services/org.coreos.Bootupd1.service
 
 %prep
 %autosetup -n %{crate}-%{version} -p1 -a1
@@ -70,6 +73,7 @@ Conflicts:      bootc < 1.14.1
 %make_install INSTALL="install -p -c"
 %{__make} install-grub-static DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
 %{__make} install-systemd-unit DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
+%{__make} install-dbus DESTDIR=%{?buildroot} INSTALL="%{__install} -p"
 
 %changelog
 * Tue Oct 18 2022 Colin Walters <walters@verbum.org> - 0.2.8-3

@@ -76,7 +76,7 @@ impl SavedState {
     ///
     /// While ordinarily the daemon runs as a systemd unit (which implicitly
     /// ensures a single instance) this is a double check against other
-    /// execution paths.
+    /// execution paths, e.g. the D-Bus interface.
     pub(crate) fn acquire_write_lock(
         sysroot_path: Utf8PathBuf,
         sysroot: Dir,

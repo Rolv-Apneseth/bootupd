@@ -97,16 +97,23 @@ pub(crate) struct Efi {
     tempmount_guard: RefCell<Option<TempMount>>,
 }
 
+pub(crate) const ESP_FS_TYPE: &str = "vfat";
+
 /// Mount flags shared by all ESP mounts: non-executable, no setuid.
-const ESP_MOUNT_FLAGS: MountFlags =
+pub(crate) const ESP_MOUNT_FLAGS: MountFlags =
     MountFlags::from_bits_retain(MountFlags::NOEXEC.bits() | MountFlags::NOSUID.bits());
 
 /// FAT mount options: owner-only permissions on files (0600) and dirs (0700).
-const ESP_MOUNT_DATA: &std::ffi::CStr = c"fmask=0177,dmask=0077";
+pub(crate) const ESP_MOUNT_DATA: &std::ffi::CStr = c"fmask=0177,dmask=0077";
 
 /// Mount the ESP from the provided device into a temporary directory.
-fn mount_esp(device: &str) -> Result<TempMount> {
-    TempMount::mount_dev(device, "vfat", ESP_MOUNT_FLAGS, Some(ESP_MOUNT_DATA))
+pub(crate) fn mount_esp(device: &str) -> Result<TempMount> {
+    TempMount::mount_dev(device, ESP_FS_TYPE, ESP_MOUNT_FLAGS, Some(ESP_MOUNT_DATA))
+}
+
+/// Mount the ESP from the provided device into a temporary directory, but with shared permissions.
+pub(crate) fn mount_esp_shared(device: &str) -> Result<TempMount> {
+    TempMount::mount_dev(device, ESP_FS_TYPE, ESP_MOUNT_FLAGS, None)
 }
 
 impl Efi {

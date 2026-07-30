@@ -1,0 +1,8 @@
+[Unit]
+Description=Bootupd D-Bus service (ESP management)
+
+[Service]
+Type=dbus
+BusName=org.coreos.Bootupd1
+ExecStart=/usr/libexec/bootupd -v dbus
+KillMode=mixed

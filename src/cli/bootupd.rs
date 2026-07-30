@@ -42,6 +42,9 @@ pub enum DVerb {
     Install(InstallOpts),
     #[cfg(efi_arch)]
     SetDefaultBootloader(DefaultBootloaderOpts),
+    #[cfg(efi_arch)]
+    #[clap(name = "dbus", about = "Start D-Bus service for ESP management")]
+    Dbus,
 }
 
 #[derive(Debug, Parser)]
@@ -116,6 +119,8 @@ impl DCommand {
             DVerb::GenerateUpdateMetadata(opts) => Self::run_generate_meta(opts),
             #[cfg(efi_arch)]
             DVerb::SetDefaultBootloader(opts) => Self::set_default_bootloader(opts),
+            #[cfg(efi_arch)]
+            DVerb::Dbus => Self::run_dbus(),
         }
     }
 
@@ -174,6 +179,40 @@ impl DCommand {
             }
 
             component.set_default_bootloader(&opts)?;
+        }
+
+        Ok(())
+    }
+
+    #[cfg(efi_arch)]
+    pub(crate) fn run_dbus() -> Result<()> {
+        use crate::dbus::{BootupdDbus, DBUS_NAME, DBUS_OBJ_PATH};
+        use event_listener::Listener;
+        use std::time::Duration;
+
+        let iface = BootupdDbus::new();
+
+        let conn = zbus::blocking::connection::Builder::system()?
+            .name(DBUS_NAME)?
+            .serve_at(DBUS_OBJ_PATH, iface)?
+            .build()
+            .context("Starting D-Bus service")?;
+
+        log::info!("D-Bus interface ready on {DBUS_NAME}");
+
+        let iface_ref = conn
+            .object_server()
+            .interface::<_, BootupdDbus>(DBUS_OBJ_PATH)?;
+
+        let timeout = Duration::from_secs(30);
+        loop {
+            let listener = conn.monitor_activity();
+            if listener.wait_timeout(timeout).is_none() {
+                if !iface_ref.get().is_mounted() {
+                    log::info!("Idle timeout with no active leases, shutting down D-Bus interface");
+                    break;
+                }
+            }
         }
 
         Ok(())
