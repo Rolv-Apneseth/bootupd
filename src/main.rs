@@ -47,6 +47,8 @@ mod ostreeutil;
 mod packagesystem;
 mod sha512string;
 mod util;
+#[cfg(efi_arch)]
+mod varlink;
 
 use clap::crate_name;
 
