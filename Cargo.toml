@@ -8,7 +8,7 @@ edition = "2021"
 rust-version = "1.90.0"
 homepage = "https://github.com/coreos/bootupd"
 
-include = ["src", "LICENSE", "Makefile", "systemd"]
+include = ["src", "LICENSE", "Makefile", "systemd", "build.rs"]
 
 # See https://github.com/coreos/cargo-vendor-filterer
 [package.metadata.vendor-filter]
