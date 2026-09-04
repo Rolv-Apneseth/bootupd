@@ -26,14 +26,22 @@ jobs:
           - ubuntu-24.04-arm
         grubcc:
           - 0
-          - 1
+        stream:
+          - 9
+          - 10
+        include:
+          # grubcc=1 uses Fedora (Dockerfile.bls), no stream variants needed
+          - runner: ubuntu-24.04
+            grubcc: 1
+          - runner: ubuntu-24.04-arm
+            grubcc: 1
 
     runs-on: [ "${{ matrix.runner }}" ]
 
     steps:
       - name: Setup env
         run: |
-          IMG_NAME=localhost/bootupd-grubcc-${{ matrix.grubcc }}
+          IMG_NAME=localhost/bootupd-grubcc-${{ matrix.grubcc }}-stream${{ matrix.stream }}
           echo "IMG_NAME=${IMG_NAME}" >> $GITHUB_ENV
 
           if [[ "${{ matrix.grubcc }}" == "1" ]]; then
@@ -71,7 +79,7 @@ jobs:
       - name: build with grubcc=${{ matrix.grubcc }}
         run: |
           dockerfile=Dockerfile
-          build_args=()
+          build_args=(--build-arg "base=quay.io/centos-bootc/centos-bootc:stream${{ matrix.stream }}")
 
           if [[ "${{ matrix.grubcc }}" == "1" ]]; then
             dockerfile=Dockerfile.bls
