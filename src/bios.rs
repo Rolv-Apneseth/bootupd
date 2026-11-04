@@ -3,6 +3,7 @@ use camino::Utf8PathBuf;
 use cap_std::ambient_authority;
 use cap_std::fs::Dir;
 use cap_std_ext::dirext::CapStdExtDirExt;
+use std::collections::BTreeMap;
 use std::io::prelude::*;
 use std::path::Path;
 use std::process::Command;
@@ -10,8 +11,10 @@ use std::process::Command;
 use bootc_internal_blockdev::Device;
 
 use crate::bootloader::Bootloader;
-use crate::bootupd::RootContext;
+use crate::bootupd::{RootContext, Sysroot};
 use crate::component::*;
+use crate::filetree::FileMetadata;
+use crate::filetree::FileTree;
 use crate::freezethaw::fsfreeze_thaw_cycle;
 use crate::grubconfigs;
 use crate::model::*;
@@ -37,6 +40,15 @@ fn target_device(device: &Device) -> Result<String> {
             anyhow::anyhow!("Failed to find PReP partition with GUID {PREPBOOT_GUID}")
         })?;
     Ok(prepdev.path())
+}
+
+/// The BIOS update payload is just the grub2-install binary itself
+fn grub_filetree(sysroot: &Dir) -> Result<FileTree> {
+    FileMetadata::new_from_path(sysroot, GRUB_BIN)
+        .with_context(|| format!("hashing {GRUB_BIN}"))
+        .map(|meta| FileTree {
+            children: BTreeMap::from([(GRUB_BIN.into(), meta)]),
+        })
 }
 
 #[derive(Default)]
@@ -140,7 +152,7 @@ impl Component for Bios {
 
         Ok(InstalledContent {
             meta,
-            filetree: None,
+            filetree: Some(grub_filetree(&src_dir)?),
             adopted_from: None,
         })
     }
@@ -252,6 +264,7 @@ impl Component for Bios {
             );
             return Ok(None);
         }
+
         let bios_devices = rootcxt.device.find_colocated_bios_boot()?;
         let Some(meta) = self.query_adopt(&bios_devices)? else {
             return Ok(None);
@@ -278,7 +291,7 @@ impl Component for Bios {
         }
         Ok(Some(InstalledContent {
             meta: update.clone(),
-            filetree: None,
+            filetree: Some(grub_filetree(&rootcxt.sysroot)?),
             adopted_from: Some(meta.version),
         }))
     }
@@ -316,7 +329,7 @@ impl Component for Bios {
         let adopted_from = None;
         Ok(InstalledContent {
             meta: updatemeta,
-            filetree: None,
+            filetree: Some(grub_filetree(&rootcxt.sysroot)?),
             adopted_from,
         })
     }
@@ -327,5 +340,95 @@ impl Component for Bios {
 
     fn get_efi_vendor(&self, _: &Path) -> Result<Option<String>> {
         Ok(None)
+    }
+
+    fn has_changed_content(
+        &self,
+        sysroot: Sysroot<'_>,
+        current: &InstalledContent,
+        _bootloader: Bootloader,
+    ) -> Result<bool> {
+        let updated = grub_filetree(sysroot.dir)?;
+        if let Some(t) = current.filetree.as_ref() {
+            Ok(!t.is_content_eq(&updated))
+        } else {
+            // Fallback path for existing installs which don't store a filetree for the BIOS component
+            log::warn!("no filetree available for the current install, assuming updatable");
+            Ok(true)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::packagesystem::Module;
+    use camino::Utf8Path;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_query_updatable_content_differs() -> Result<()> {
+        let sysroot = tempfile::tempdir()?;
+        let sysroot_path = Utf8Path::from_path(sysroot.path()).expect("valid UTF-8");
+
+        // Create update payload
+        std::fs::create_dir_all(sysroot_path.join("usr/sbin"))?;
+        std::fs::write(sysroot_path.join(GRUB_BIN), "grub2-install new")?;
+        std::fs::create_dir_all(sysroot_path.join(BOOTUPD_UPDATES_DIR))?;
+        let meta = ContentMetadata {
+            timestamp: Utc::now(),
+            version: "grub2 2.12-7.el9".into(),
+            versions: Some(vec![Module {
+                name: "grub2".into(),
+                evr: "2.12-7.el9".into(),
+            }]),
+            #[cfg(efi_arch)]
+            default_bootloader: None,
+        };
+        write_update_metadata(sysroot_path.as_str(), PathBuf::from("BIOS.json"), &meta)?;
+
+        // The installed grub2-install has a higher EVR
+        let old_payload = tempfile::tempdir()?;
+        std::fs::create_dir_all(old_payload.path().join("usr/sbin"))?;
+        std::fs::write(old_payload.path().join(GRUB_BIN), "grub2-install old")?;
+
+        let sysroot_dir = Dir::open_ambient_dir(sysroot_path, ambient_authority())?;
+        let old_payload_dir = Dir::open_ambient_dir(old_payload.path(), ambient_authority())?;
+        let sysroot = Sysroot {
+            dir: &sysroot_dir,
+            path: sysroot_path,
+        };
+        let bios = Bios::default();
+
+        // Changed content wins despite the lower EVR
+        let inst = InstalledContent {
+            meta: meta.clone(),
+            filetree: Some(grub_filetree(&old_payload_dir)?),
+            adopted_from: None,
+        };
+        let (update, updatable) = bios.query_updatable(sysroot, &inst, Bootloader::Grub)?;
+        assert!(update.is_some());
+        assert!(matches!(updatable, ComponentUpdatable::Upgradable));
+
+        // Installs from before filetrees were stored, update once
+        let inst = InstalledContent {
+            meta: meta.clone(),
+            filetree: None,
+            adopted_from: None,
+        };
+        let (_, updatable) = bios.query_updatable(sysroot, &inst, Bootloader::Grub)?;
+        assert!(matches!(updatable, ComponentUpdatable::Upgradable));
+
+        // Identical content, no update
+        let inst = InstalledContent {
+            meta: meta.clone(),
+            filetree: Some(grub_filetree(sysroot.dir)?),
+            adopted_from: None,
+        };
+        let (_, updatable) = bios.query_updatable(sysroot, &inst, Bootloader::Grub)?;
+        assert!(matches!(updatable, ComponentUpdatable::AtLatestVersion));
+
+        Ok(())
     }
 }

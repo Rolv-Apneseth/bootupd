@@ -459,13 +459,13 @@ pub(crate) fn update(name: &str, rootcxt: &RootContext) -> Result<ComponentUpdat
         anyhow::bail!("Component {} is not installed", name);
     };
     let sysroot = &rootcxt.sysroot;
-    let update = component.query_update(sysroot, bootloader)?;
-    let update = match update.as_ref() {
-        Some(p) => match inst.meta.can_upgrade_to(p) {
-            std::cmp::Ordering::Less => p, // current < available -> upgrade
-            _ => return Ok(ComponentUpdateResult::AtLatestVersion),
-        },
-        None => {
+    let (update, updatable) = component
+        .query_updatable(rootcxt.as_sysroot(), &inst, bootloader)
+        .with_context(|| format!("Failed to check {} for updates", name))?;
+    let update = match (update, updatable) {
+        (Some(p), ComponentUpdatable::Upgradable) => p,
+        (_, updatable) => {
+            log::debug!("Skipping update, updatable: {updatable:?}");
             component.query_requires_update(sysroot)?;
             return Ok(ComponentUpdateResult::AtLatestVersion);
         }
@@ -606,10 +606,12 @@ pub(crate) fn validate(name: &str) -> Result<ValidationResult> {
 pub(crate) fn status() -> Result<Status> {
     let mut ret: Status = Default::default();
     let mut known_components = get_components();
-    let root = Dir::open_ambient_dir("/", ambient_authority())?;
+    let path_root = Utf8Path::new("/");
+    let root = Dir::open_ambient_dir(path_root, ambient_authority())?;
 
     // Populate aleph version
-    ret.aleph_version = aleph::get_aleph_version(Path::new("/"))?.and_then(|a| a.aleph.version);
+    ret.aleph_version =
+        aleph::get_aleph_version(path_root.as_std_path())?.and_then(|a| a.aleph.version);
 
     // Populate boot method
     #[cfg(any(
@@ -625,6 +627,10 @@ pub(crate) fn status() -> Result<Status> {
     let state = SavedState::load_from_disk("/", Some(bootloader))?;
 
     if let Some(state) = state {
+        let sysroot = Sysroot {
+            dir: &root,
+            path: path_root,
+        };
         for (name, ic) in state.installed.iter() {
             log::trace!("Gathering status for installed component: {}", name);
             let component = known_components
@@ -632,8 +638,9 @@ pub(crate) fn status() -> Result<Status> {
                 .ok_or_else(|| anyhow!("Unknown component installed: {}", name))?;
             let component = component.as_ref();
             let interrupted = state.pending.as_ref().and_then(|p| p.get(name.as_str()));
-            let update = component.query_update(&root, bootloader)?;
-            let updatable = ComponentUpdatable::from_metadata(&ic.meta, update.as_ref());
+            let (update, updatable) = component
+                .query_updatable(sysroot, &ic, bootloader)
+                .with_context(|| format!("Querying update status for component {}", name))?;
             let adopted_from = ic.adopted_from.clone();
             ret.components.insert(
                 name.to_string(),
@@ -718,7 +725,6 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
         let msg = match component.updatable {
             ComponentUpdatable::NoUpdateAvailable => Cow::Borrowed("No update found"),
             ComponentUpdatable::AtLatestVersion => Cow::Borrowed("At latest version"),
-            ComponentUpdatable::WouldDowngrade => Cow::Borrowed("Ignoring downgrade"),
             ComponentUpdatable::Upgradable => Cow::Owned(format!(
                 "Available: {}",
                 component.update.as_ref().expect("update").version
@@ -750,6 +756,16 @@ pub(crate) fn print_status(status: &Status) -> Result<()> {
     Ok(())
 }
 
+/// A borrowed view of a sysroot, used by the read-only query paths.
+///
+/// Unlike [`RootContext`], this carries no block device, so
+/// callers like `status` avoid requiring device discovery.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct Sysroot<'a> {
+    pub(crate) dir: &'a Dir,
+    pub(crate) path: &'a Utf8Path,
+}
+
 pub struct RootContext {
     pub sysroot: Dir,
     pub path: Utf8PathBuf,
@@ -767,6 +783,15 @@ impl RootContext {
             sysroot,
             path: Utf8Path::new(path).into(),
             device,
+        }
+    }
+
+    /// The sysroot view used by the query paths, which do not touch the
+    /// block device.
+    pub(crate) fn as_sysroot(&self) -> Sysroot<'_> {
+        Sysroot {
+            dir: &self.sysroot,
+            path: &self.path,
         }
     }
 }
